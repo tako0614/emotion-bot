@@ -8,6 +8,8 @@ import random  # ランダム化のためにインポート追加
 import os
 from dotenv import load_dotenv  # python-dotenv パッケージを追加
 from emotion import get_emotion_scores
+import matplotlib as mpl
+from matplotlib.colors import LinearSegmentedColormap
 
 # 環境変数から設定を読み込む
 load_dotenv()  # .env ファイルを読み込む
@@ -20,9 +22,15 @@ intents.messages = True
 bot = commands.Bot(command_prefix='!', intents=intents)
 
 # 日本語フォントの設定（使用環境に合わせて変更）
+# ダークテーマをベースにしない（通常の白背景から始める）
+plt.style.use('default')
 plt.rcParams['font.family'] = 'MS Gothic'  # Windowsの場合
-# plt.rcParams['font.family'] = 'Hiragino Sans'  # Macの場合
-# plt.rcParams['font.family'] = 'IPAexGothic'  # Linuxの場合
+plt.rcParams['axes.facecolor'] = '#36393F'  # 背景色をDiscordのダークテーマ色に変更
+plt.rcParams['figure.facecolor'] = '#36393F'  # 外枠も同じ色に統一
+plt.rcParams['axes.edgecolor'] = '#ffffff'  # 軸の色を白に
+plt.rcParams['axes.labelcolor'] = 'white'  # ラベルの色
+plt.rcParams['xtick.color'] = 'white'  # X軸の目盛りの色
+plt.rcParams['ytick.color'] = 'white'  # Y軸の目盛りの色
 
 @bot.event
 async def on_ready():
@@ -157,6 +165,7 @@ def create_emotion_polygon(emotion_scores):
     
     # 感情の英語から日本語への対応表 - 新しいモデルの形式に対応
     emotion_names_ja = {
+        # 新しいモデルの感情マッピング
         "amaze": "びっくり！",
         "anger": "おこったぞおおおお",
         "dislike": "きらい、",
@@ -202,10 +211,30 @@ def create_emotion_polygon(emotion_scores):
     num_categories = len(categories)
     if num_categories == 1:
         # 1つだけの場合は円グラフに変更
-        fig, ax = plt.subplots(figsize=(8, 8))
-        ax.bar([categories[0]], [values[0]], width=0.5)
-        ax.set_ylim(0, 1)
-        plt.title(f"感情分析結果: {categories[0]}", fontsize=16)
+        fig, ax = plt.subplots(figsize=(12, 8))  # 16:9のアスペクト比に変更
+        
+        # カスタムカラーで装飾したバー - 青系の色に変更
+        color = '#5865F2'  # Discord Blurple（Discordの青色）に変更
+        bar = ax.bar([categories[0]], [values[0]], width=0.5, color=color, alpha=0.9)
+        ax.set_ylim(0, 1.1)  # 少し余裕を持たせる
+        
+        # 枠線の色を変更
+        for spine in ax.spines.values():
+            spine.set_color('#ffffff')
+        
+        # タイトルを装飾
+        plt.title(f"感情分析結果: {categories[0]}", fontsize=18, color='white', fontweight='bold')
+        
+        # バーの上に値を表示
+        ax.text(0, values[0] + 0.05, f"{values[0]:.2f}", ha='center', fontsize=14, color='#7289DA')
+        
+        # グリッドを追加 - 白色で鮮明に
+        ax.yaxis.grid(True, linestyle='-', alpha=0.7, color='white', linewidth=1.5)
+        
+        # 背景色を設定
+        ax.set_facecolor('#36393F')  # 既に設定済み
+        fig.patch.set_facecolor('#36393F')  # 外枠もDiscordの背景色に
+        
         return fig
     
     # 角度の計算 (n等分) とデータの繰り返し
@@ -214,32 +243,56 @@ def create_emotion_polygon(emotion_scores):
     angles += angles[:1]  # 最初の角度を最後にも追加
 
     # 極座標プロットの設定
-    fig, ax = plt.subplots(figsize=(8, 8), subplot_kw={'projection': 'polar'})
+    fig, ax = plt.subplots(figsize=(12, 9), subplot_kw={'projection': 'polar'})
+    
+    # 背景色とグリッドの設定
+    ax.set_facecolor('#36393F')  # Discordのダークテーマカラー
+    fig.patch.set_facecolor('#36393F')  # 外枠も同じ色に
+    
+    # 角度の設定
     ax.set_theta_offset(np.pi / 2)
     ax.set_theta_direction(-1)
 
+    # カスタムカラーマップを作成
+    colors = [(0.35, 0.4, 0.95, 0.7), (0.45, 0.6, 0.95, 0.8), (0.55, 0.7, 0.95, 0.9)]  # 青系グラデーション
+    cmap = LinearSegmentedColormap.from_list('custom_cmap', colors, N=256)
+    
     # データ描画
-    ax.plot(angles, values, linewidth=3, linestyle='-', marker='o', markersize=10)
-    ax.fill(angles, values, alpha=0.4)
-
-    # 軸ラベル設定 - すでに日本語に変換済みなので追加の変換は不要
+    line = ax.plot(angles, values, linewidth=4, linestyle='-', color='#7289DA')[0]  # データ線は青のまま、太く
+    # グラデーションカラーで塗り潰し
+    ax.fill(angles, values, alpha=0.7, color='#5865F2')  # 透明度を下げてよりはっきりと
+    
+    # マーカーを別途追加（より大きく装飾的に）
+    ax.scatter(angles[:-1], values[:-1], s=180, c='#40E0D0', alpha=1.0, 
+               edgecolors='#00BFFF', linewidth=3, zorder=10)  # サイズと線の太さを増加
+    
+    # 放射状の線を白色で太く、はっきりと設定
+    ax.grid(True, color='white', alpha=0.7, linestyle='-', linewidth=1.5)
+    
+    # 軸ラベル設定
     ax.set_xticks(angles[:-1])
-    ax.set_xticklabels(categories)  # そのまま使用
-
-    # 半径の範囲を0～1に設定
+    ax.set_xticklabels(categories)
+    
+    # 半径の範囲を設定
     ax.set_ylim(0, 1)
     
-    # グリッド設定
-    ax.grid(True, linewidth=1.0, alpha=0.4)
+    # 同心円のグリッド線をスタイリング - 白色で鮮明に
+    ax.set_rticks([0.25, 0.5, 0.75, 1.0])  # より目立つ値に調整
+    gridlines = ax.yaxis.get_gridlines()
+    for gl in gridlines:
+        gl.set_color('white')
+        gl.set_alpha(0.6)  # 透明度を下げてはっきりと
+        gl.set_linestyle('-')
+        gl.set_linewidth(1.5)  # 線を太く
     
     # 目盛りを非表示に設定
-    ax.set_rticks([])  # 半径方向の目盛りを消す
+    ax.set_yticklabels([])  # 数値を非表示
     
-    # ラベルサイズを3倍程度に拡大（10→30）
-    ax.tick_params(labelsize=30)
+    # ラベルサイズを拡大（色はすでに白っぽい色に設定済み）
+    ax.tick_params(labelsize=40, colors='white', grid_color='white')
     
-    # タイトルを削除（以下の行をコメントアウト）
-    # plt.title("感情分析結果（上位5つ）", fontsize=16, pad=20)
+    # 外枠を非表示
+    ax.spines['polar'].set_visible(False)
     
     return fig
 
