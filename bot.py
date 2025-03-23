@@ -12,7 +12,7 @@ from seiteki import classify_sexual_content  # seiteki.pyから関数をイン�
 import matplotlib as mpl
 from matplotlib.colors import LinearSegmentedColormap
 import matplotlib.font_manager as fm
-from waruguti import generate_insult  # 悪口生成関数をインポート
+from llm import generate_insult, generate_praise, generate_comfort  # 新しい関数をインポート
 from collections import defaultdict
 import re
 
@@ -172,87 +172,80 @@ async def on_message(message):
         else:
             await message.reply(f"画像ファイルが見つかりませんでした: {score}.png")
     
-    # ユーザー指定の悪口生成 - リプライ形式
+    # ユーザー指定の悪口生成 - リプライ形式のみ
     if message.reference and message.content.lower() == "わるぐち":
         try:
             # リプライ先のメッセージを取得
             referenced_msg = await message.channel.fetch_message(message.reference.message_id)
-            target_user = referenced_msg.author
             
-            # ボットに対する悪口は生成しない
-            if target_user.bot:
-                await message.reply("ボットに対する悪口は生成できません。")
+            # メッセージの内容がない場合は処理しない
+            if not referenced_msg.content:
+                await message.reply("テキストメッセージにのみ反応できます。")
                 return
                 
-            await message.channel.send(f"{target_user.display_name}に対する悪口を生成中...")
+            await message.channel.send("悪口を生成中...")
             
-            # ユーザーのメッセージを取得（最大20件）
-            user_messages = []
-            async for msg in message.channel.history(limit=400):
-                if msg.author.id == target_user.id and msg.content and len(user_messages) < 20:
-                    user_messages.append(msg.content)
-            
-            # メッセージが少なすぎる場合
-            if len(user_messages) < 3:
-                await message.reply(f"{target_user.display_name}のメッセージが少なすぎて、悪口を生成できません。")
-                return
-                
             # 悪口の生成
-            insult = generate_insult(target_user.display_name, user_messages)
+            text = referenced_msg.content
+            insult = generate_insult(text)
             
             # 結果を送信
-            await message.reply(f"**{target_user.display_name}**: {insult}")
-                
-        except Exception as e:
-            print(f"悪口生成中にエラー: {e}")
-            traceback.print_exc()
-            await message.reply(f"エラーが発生しました: {str(e)}")
-            
-    # ユーザー指定の悪口生成 - メンション形式
-    elif message.content.startswith("わるぐち "):
-        try:
-            # メンションを検出
-            mentions = message.mentions
-            if not mentions:
-                await message.reply("ユーザーをメンションしてください。例: `悪口 @ユーザー名`")
-                return
-                
-            target_user = mentions[0]  # 最初のメンションされたユーザーを対象とする
-            
-            # ボットに対する悪口は生成しない
-            if target_user.bot:
-                await message.reply("ボットに対する悪口は生成できません。")
-                return
-                
-            await message.channel.send(f"{target_user.display_name}に対する悪口を生成中...")
-            
-            # ユーザーのメッセージを取得（最大20件）
-            user_messages = []
-            async for msg in message.channel.history(limit=100):
-                if msg.author.id == target_user.id and msg.content and len(user_messages) < 20:
-                    user_messages.append(msg.content)
-            
-            # メッセージが少なすぎる場合
-            if len(user_messages) < 3:
-                await message.reply(f"{target_user.display_name}のメッセージが少なすぎて、悪口を生成できません。")
-                return
-                
-            # 悪口の生成
-            insult = generate_insult(target_user.display_name, user_messages)
-            
-            # 結果を送信
-            await message.reply(f"**{target_user.display_name}**: {insult}")
+            await message.reply(f"{insult}")
                 
         except Exception as e:
             print(f"悪口生成中にエラー: {e}")
             traceback.print_exc()
             await message.reply(f"エラーが発生しました: {str(e)}")
     
-    # 従来の「わるぐち」コマンド（単体で使用された場合）は無効化
-    elif message.content == "わるぐち":
-        await message.reply("特定のユーザーに対して悪口を生成するには以下の方法があります：\n"
-                           "1. メッセージへのリプライで「わるぐち」\n"
-                           "2. 「悪口 @ユーザー名」と入力")
+    # 「ほめほめ」コマンドに反応
+    elif message.reference and message.content == "ほめほめ":
+        try:
+            # リプライ先のメッセージを取得
+            referenced_msg = await message.channel.fetch_message(message.reference.message_id)
+            
+            # メッセージの内容がない場合は処理しない
+            if not referenced_msg.content:
+                await message.reply("テキストメッセージにのみ反応できます。")
+                return
+                
+            await message.channel.send("誉め言葉を生成中...")
+            
+            # 誉め言葉を生成
+            text = referenced_msg.content
+            praise = generate_praise(text)
+            
+            # 結果を送信
+            await message.reply(f"{praise}")
+                
+        except Exception as e:
+            print(f"誉め言葉生成中にエラー: {e}")
+            traceback.print_exc()
+            await message.reply(f"エラーが発生しました: {str(e)}")
+    
+    # 「なぐさめ」コマンドに反応
+    elif message.reference and message.content == "なぐさめ":
+        try:
+            # リプライ先のメッセージを取得
+            referenced_msg = await message.channel.fetch_message(message.reference.message_id)
+            
+            # メッセージの内容がない場合は処理しない
+            if not referenced_msg.content:
+                await message.reply("テキストメッセージにのみ反応できます。")
+                return
+                
+            await message.channel.send("慰め言葉を生成中...")
+            
+            # 慰め言葉を生成
+            text = referenced_msg.content
+            comfort = generate_comfort(text)
+            
+            # 結果を送信
+            await message.reply(f"{comfort}")
+                
+        except Exception as e:
+            print(f"慰め言葉生成中にエラー: {e}")
+            traceback.print_exc()
+            await message.reply(f"エラーが発生しました: {str(e)}")
 
     await bot.process_commands(message)
 
