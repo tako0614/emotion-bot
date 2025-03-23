@@ -12,6 +12,9 @@ from seiteki import classify_sexual_content  # seiteki.pyから関数をイン�
 import matplotlib as mpl
 from matplotlib.colors import LinearSegmentedColormap
 import matplotlib.font_manager as fm
+from waruguti import generate_insult  # 悪口生成関数をインポート
+from collections import defaultdict
+import re
 
 # 環境変数から設定を読み込む
 load_dotenv()  # .env ファイルを読み込む
@@ -51,7 +54,7 @@ def setup_custom_font():
 def get_available_japanese_font():
     # まず指定のTTFファイルを確認
     custom_font_path = "./NotoSansCJKjp-Regular.ttf"
-    if os.path.exists(custom_font_path):
+    if (os.path.exists(custom_font_path)):
         return setup_custom_font()
     
     # Ubuntu環境で一般的に利用可能な日本語フォント候補
@@ -168,6 +171,90 @@ async def on_message(message):
                 await message.reply(f"エロ度: {score}", file=file)
         else:
             await message.reply(f"画像ファイルが見つかりませんでした: {score}.png")
+    
+    # ユーザー指定の悪口生成 - リプライ形式
+    if message.reference and message.content.lower() == "わるぐち":
+        try:
+            # リプライ先のメッセージを取得
+            referenced_msg = await message.channel.fetch_message(message.reference.message_id)
+            target_user = referenced_msg.author
+            
+            # ボットに対する悪口は生成しない
+            if target_user.bot:
+                await message.reply("ボットに対する悪口は生成できません。")
+                return
+                
+            await message.channel.send(f"{target_user.display_name}に対する悪口を生成中...")
+            
+            # ユーザーのメッセージを取得（最大20件）
+            user_messages = []
+            async for msg in message.channel.history(limit=400):
+                if msg.author.id == target_user.id and msg.content and len(user_messages) < 20:
+                    user_messages.append(msg.content)
+            
+            # メッセージが少なすぎる場合
+            if len(user_messages) < 3:
+                await message.reply(f"{target_user.display_name}のメッセージが少なすぎて、悪口を生成できません。")
+                return
+                
+            # 悪口の生成
+            insult = generate_insult(target_user.display_name, user_messages)
+            
+            # 結果を送信
+            await message.reply(f"**{target_user.display_name}**: {insult}")
+                
+        except Exception as e:
+            print(f"悪口生成中にエラー: {e}")
+            traceback.print_exc()
+            await message.reply(f"エラーが発生しました: {str(e)}")
+            
+    # ユーザー指定の悪口生成 - メンション形式
+    elif message.content.startswith("わるぐち "):
+        try:
+            # メンションを検出
+            mentions = message.mentions
+            if not mentions:
+                await message.reply("ユーザーをメンションしてください。例: `悪口 @ユーザー名`")
+                return
+                
+            target_user = mentions[0]  # 最初のメンションされたユーザーを対象とする
+            
+            # ボットに対する悪口は生成しない
+            if target_user.bot:
+                await message.reply("ボットに対する悪口は生成できません。")
+                return
+                
+            await message.channel.send(f"{target_user.display_name}に対する悪口を生成中...")
+            
+            # ユーザーのメッセージを取得（最大20件）
+            user_messages = []
+            async for msg in message.channel.history(limit=100):
+                if msg.author.id == target_user.id and msg.content and len(user_messages) < 20:
+                    user_messages.append(msg.content)
+            
+            # メッセージが少なすぎる場合
+            if len(user_messages) < 3:
+                await message.reply(f"{target_user.display_name}のメッセージが少なすぎて、悪口を生成できません。")
+                return
+                
+            # 悪口の生成
+            insult = generate_insult(target_user.display_name, user_messages)
+            
+            # 結果を送信
+            await message.reply(f"**{target_user.display_name}**: {insult}")
+                
+        except Exception as e:
+            print(f"悪口生成中にエラー: {e}")
+            traceback.print_exc()
+            await message.reply(f"エラーが発生しました: {str(e)}")
+    
+    # 従来の「わるぐち」コマンド（単体で使用された場合）は無効化
+    elif message.content == "わるぐち":
+        await message.reply("特定のユーザーに対して悪口を生成するには以下の方法があります：\n"
+                           "1. メッセージへのリプライで「わるぐち」\n"
+                           "2. 「悪口 @ユーザー名」と入力")
+
+    await bot.process_commands(message)
 
 # スコアが高い感情を取得する関数
 def get_top_emotions(emotion_scores, n=5):  # デフォルトを5に変更（6から5へ）
