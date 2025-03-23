@@ -31,6 +31,7 @@ def get_available_japanese_font():
         'IPAPGothic',
         'VL Gothic',
         'Noto Sans Mono CJK JP',
+        'Noto Sans',
         'Droid Sans Japanese',
         'Takao Gothic',
         'Takao PGothic',
