@@ -35,8 +35,6 @@ def get_available_japanese_font():
         'Takao Gothic',
         'Takao PGothic',
         'MS Gothic',  # Windows用も一応残す
-        'DejaVu Sans',
-        'sans-serif'  # 最終的なフォールバック
     ]
     
     for font in font_candidates:
