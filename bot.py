@@ -224,7 +224,7 @@ def create_emotion_polygon(emotion_scores):
         # 新しいモデルの感情マッピング
         "amaze": "びっくり！",
         "anger": "おこったぞおおおお",
-        "dislike": "きらい、",
+        "dislike": "きらい、、、",
         "excite": "興奮するぅうう",
         "fear": "こわいよぉ",
         "joy": "うれしいい！",
