@@ -143,9 +143,13 @@ async def on_message(message):
             buf.seek(0)
             plt.close(fig)
             
-            # グラフと元メッセージをリプライ
+            # 埋め込みメッセージの作成
+            embed = discord.Embed(title="感情分析結果", description=f'メッセージ: "{text}"', color=0x7289DA)
             file = discord.File(buf, filename='emotions.png')
-            await message.reply(f'メッセージ: "{text}"\n感情分析結果:', file=file)
+            embed.set_image(url="attachment://emotions.png")
+            
+            # 埋め込みメッセージをリプライ
+            await message.reply(embed=embed, file=file)
         except KeyError as ke:
             print(f"キーエラーが発生しました: {ke}")
             traceback.print_exc()
