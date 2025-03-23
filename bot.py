@@ -26,15 +26,7 @@ bot = commands.Bot(command_prefix='!', intents=intents)
 def get_available_japanese_font():
     # Ubuntu環境で一般的に利用可能な日本語フォント候補
     font_candidates = [
-        'Noto Sans CJK JP',
-        'IPAGothic',
-        'IPAPGothic',
-        'VL Gothic',
-        'Noto Sans Mono CJK JP',
-        'Noto Sans',
-        'Droid Sans Japanese',
-        'Takao Gothic',
-        'Takao PGothic',
+        "fonts-noto"
         'MS Gothic',  # Windows用も一応残す
     ]
     
