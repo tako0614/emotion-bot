@@ -4,13 +4,14 @@ import matplotlib.pyplot as plt
 import numpy as np
 import io
 import traceback
-import random  # ランダム化のためにインポート追加
+import random
 import os
-from dotenv import load_dotenv  # python-dotenv パッケージを追加
+from dotenv import load_dotenv
 from emotion import get_emotion_scores
+from seiteki import classify_sexual_content  # seiteki.pyから関数をインポート
 import matplotlib as mpl
 from matplotlib.colors import LinearSegmentedColormap
-import matplotlib.font_manager as fm  # フォント管理のためのインポート追加
+import matplotlib.font_manager as fm
 
 # 環境変数から設定を読み込む
 load_dotenv()  # .env ファイルを読み込む
@@ -155,6 +156,18 @@ async def on_message(message):
             import traceback
             traceback.print_exc()  # より詳細なエラー情報を表示
             await message.reply(f"処理中にエラーが発生しました: {e}")
+    
+    if message.reference and message.content == "きもい":
+        referenced_msg = await message.channel.fetch_message(message.reference.message_id)
+        text = referenced_msg.content
+        score = classify_sexual_content(text)
+        img_path = f"./kimoi/{score}.png"
+        if os.path.exists(img_path):
+            with open(img_path, "rb") as f:
+                file = discord.File(f, filename=f"{score}.png")
+                await message.reply(f"メッセージ: \"{text}\"\n解析結果: {score}", file=file)
+        else:
+            await message.reply(f"画像ファイルが見つかりませんでした: {score}.png")
 
 # スコアが高い感情を取得する関数
 def get_top_emotions(emotion_scores, n=5):  # デフォルトを5に変更（6から5へ）
