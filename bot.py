@@ -118,12 +118,10 @@ async def on_message(message):
         try:
             # 全ての感情スコアを取得
             emotion_scores = get_emotion_scores(text)
-            print(f"Raw emotion scores: {emotion_scores}")
             
             # 先にneutralを明示的に除外（大文字小文字を区別しない）
             emotion_scores = {k: v for k, v in emotion_scores.items() 
                              if k.lower() != 'neutral'}
-            print(f"After removing neutral: {emotion_scores}")
             
             # スコアが存在するか確認
             if not emotion_scores:
@@ -132,11 +130,9 @@ async def on_message(message):
                 
             # スコア上位5つを選択（neutralを除外したので最大5つ）
             top_emotions = get_top_emotions(emotion_scores, 5)
-            print(f"Top emotions: {top_emotions}")
             
             # スコアをスケーリング
             scaled_emotions = scale_emotion_scores(top_emotions)
-            print(f"Scaled emotions: {scaled_emotions}")
             
             # 5角形グラフの生成
             fig = create_emotion_polygon(scaled_emotions)
@@ -251,13 +247,11 @@ def create_emotion_polygon(emotion_scores):
     
     # 日本語変換後のスコアで置き換え
     emotion_scores = japanese_scores
-    print(f"日本語に変換後: {emotion_scores}")
     
     # カテゴリーの順序をランダム化する
     items = list(emotion_scores.items())
     random.shuffle(items)  # 順序をランダムに並べ替え
     emotion_scores = dict(items)
-    print(f"ランダム化後の順序: {emotion_scores}")
     
     # カテゴリーとスコアを取得
     categories = list(emotion_scores.keys())
