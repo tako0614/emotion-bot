@@ -29,15 +29,11 @@ def get_emotion_scores(text):
         logits = outputs.logits
         # このモデルはソフトマックス確率を使用する
         probabilities = F.softmax(logits, dim=1).squeeze().tolist()
-    
-    # モデルのラベル情報を取得
-    print(f"使用する感情セット: {list(emotion_mapping.values())}")
-    
+
     # 感情スコアを辞書形式で返す
     if isinstance(probabilities, list):
         # バッチサイズが1の場合
         scores = {emotion_mapping[i]: score for i, score in enumerate(probabilities)}
-        print(f"生の感情スコア: {scores}")
     else:
         # スカラー値の場合（確率が1つだけの場合）
         scores = {emotion_mapping[0]: probabilities}
