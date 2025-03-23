@@ -228,7 +228,7 @@ def create_emotion_polygon(emotion_scores):
         "excite": "興奮するぅうう",
         "fear": "こわいよぉ",
         "joy": "うれしいい！",
-        "like": "好き♡",
+        "like": "好きだよぉ",
         "relief": "安心すりゅぅ",
         "sad": "悲しいよぉ",
         "shame": "恥ずかしい ///"
