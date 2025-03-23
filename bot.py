@@ -77,7 +77,8 @@ plt.style.use('default')
 custom_font_name = setup_custom_font()
 if custom_font_name:
     plt.rcParams['font.family'] = 'sans-serif'
-    plt.rcParams['font.sans-serif'] = [custom_font_name] + plt.rcParams.get('font.sans-serif', [])
+    plt.rcParams['font.sans-serif'] = [custom_font_name]
+    plt.rcParams['font.family'] = custom_font_name
 else:
     # カスタムフォントが登録できなかった場合は従来の方法で検出
     japanese_font = get_available_japanese_font()
