@@ -22,12 +22,42 @@ intents.messages = True
 
 bot = commands.Bot(command_prefix='!', intents=intents)
 
+# カスタムフォントを登録して使用する関数
+def setup_custom_font():
+    custom_font_path = "./NotoSansCJKjp-Regular.ttf"
+    if os.path.exists(custom_font_path):
+        print(f"カスタムフォントを登録します: {custom_font_path}")
+        try:
+            # フォントを明示的に登録
+            font_prop = fm.FontProperties(fname=custom_font_path)
+            custom_font = fm.FontEntry(
+                fname=custom_font_path,
+                name=font_prop.get_name(),
+                style='normal',
+                variant='normal',
+                weight='normal',
+                stretch='normal',
+                size='medium'
+            )
+            fm.fontManager.ttflist.insert(0, custom_font)
+            print(f"フォント登録成功: {font_prop.get_name()}")
+            return font_prop.get_name()
+        except Exception as e:
+            print(f"カスタムフォントの登録に失敗しました: {e}")
+    return None
+
 # 利用可能な日本語フォントを検出する関数
 def get_available_japanese_font():
+    # まず指定のTTFファイルを確認
+    custom_font_path = "./NotoSansCJKjp-Regular.ttf"
+    if os.path.exists(custom_font_path):
+        return setup_custom_font()
+    
     # Ubuntu環境で一般的に利用可能な日本語フォント候補
     font_candidates = [
-        "fonts-noto"
+        "Noto Sans CJK JP",  # 正しいフォント名に修正
         'MS Gothic',  # Windows用も一応残す
+        'IPAGothic',  # 他の一般的な日本語フォント
     ]
     
     for font in font_candidates:
@@ -43,8 +73,17 @@ def get_available_japanese_font():
 
 # 日本語フォントの設定（システムに合わせて自動検出）
 plt.style.use('default')
-japanese_font = get_available_japanese_font()
-plt.rcParams['font.family'] = japanese_font
+# まずカスタムフォントを直接登録
+custom_font_name = setup_custom_font()
+if custom_font_name:
+    plt.rcParams['font.family'] = 'sans-serif'
+    plt.rcParams['font.sans-serif'] = [custom_font_name] + plt.rcParams.get('font.sans-serif', [])
+else:
+    # カスタムフォントが登録できなかった場合は従来の方法で検出
+    japanese_font = get_available_japanese_font()
+    plt.rcParams['font.family'] = japanese_font
+
+# Discord色の設定は維持
 plt.rcParams['axes.facecolor'] = '#36393F'  # 背景色をDiscordのダークテーマ色に変更
 plt.rcParams['figure.facecolor'] = '#36393F'  # 外枠も同じ色に統一
 plt.rcParams['axes.edgecolor'] = '#ffffff'  # 軸の色を白に
