@@ -165,7 +165,7 @@ async def on_message(message):
         if os.path.exists(img_path):
             with open(img_path, "rb") as f:
                 file = discord.File(f, filename=f"{score}.png")
-                await message.reply(f"メッセージ: \"{text}\"\n解析結果: {score}", file=file)
+                await message.reply(f"エロ度: {score}", file=file)
         else:
             await message.reply(f"画像ファイルが見つかりませんでした: {score}.png")
 
