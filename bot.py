@@ -10,6 +10,7 @@ from dotenv import load_dotenv  # python-dotenv パッケージを追加
 from emotion import get_emotion_scores
 import matplotlib as mpl
 from matplotlib.colors import LinearSegmentedColormap
+import matplotlib.font_manager as fm  # フォント管理のためのインポート追加
 
 # 環境変数から設定を読み込む
 load_dotenv()  # .env ファイルを読み込む
@@ -21,10 +22,38 @@ intents.messages = True
 
 bot = commands.Bot(command_prefix='!', intents=intents)
 
-# 日本語フォントの設定（使用環境に合わせて変更）
-# ダークテーマをベースにしない（通常の白背景から始める）
+# 利用可能な日本語フォントを検出する関数
+def get_available_japanese_font():
+    # Ubuntu環境で一般的に利用可能な日本語フォント候補
+    font_candidates = [
+        'Noto Sans CJK JP',
+        'IPAGothic',
+        'IPAPGothic',
+        'VL Gothic',
+        'Noto Sans Mono CJK JP',
+        'Droid Sans Japanese',
+        'Takao Gothic',
+        'Takao PGothic',
+        'MS Gothic',  # Windows用も一応残す
+        'DejaVu Sans',
+        'sans-serif'  # 最終的なフォールバック
+    ]
+    
+    for font in font_candidates:
+        try:
+            fm.findfont(font, fallback_to_default=False)
+            print(f"利用可能な日本語フォントを発見: {font}")
+            return font
+        except:
+            pass
+    
+    print("日本語フォントが見つかりませんでした。デフォルトフォントを使用します。")
+    return 'sans-serif'
+
+# 日本語フォントの設定（システムに合わせて自動検出）
 plt.style.use('default')
-plt.rcParams['font.family'] = 'MS Gothic'  # Windowsの場合
+japanese_font = get_available_japanese_font()
+plt.rcParams['font.family'] = japanese_font
 plt.rcParams['axes.facecolor'] = '#36393F'  # 背景色をDiscordのダークテーマ色に変更
 plt.rcParams['figure.facecolor'] = '#36393F'  # 外枠も同じ色に統一
 plt.rcParams['axes.edgecolor'] = '#ffffff'  # 軸の色を白に
@@ -269,9 +298,9 @@ def create_emotion_polygon(emotion_scores):
     # 放射状の線を白色で太く、はっきりと設定
     ax.grid(True, color='white', alpha=0.7, linestyle='-', linewidth=1.5)
     
-    # 軸ラベル設定
+    # 軸ラベル設定 - Ubuntu環境を考慮してフォントサイズを調整
     ax.set_xticks(angles[:-1])
-    ax.set_xticklabels(categories)
+    ax.set_xticklabels(categories, fontsize=24)  # フォントサイズを調整（40から24に）
     
     # 半径の範囲を設定
     ax.set_ylim(0, 1)
