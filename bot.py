@@ -338,6 +338,35 @@ async def on_message(message):
                     except Exception:
                         pass
 
+                # サーバータグ情報の取得（ユーザーのプライマリサーバーから）
+                primary_guild_info = None
+                try:
+                    # member_obj が取得できていればそこから、なければ msg.author から primary_guild を取得
+                    user_obj = member_obj if member_obj is not None else msg.author
+                    pg = getattr(user_obj, 'primary_guild', None)
+
+                    if pg and pg.tag and pg.identity_enabled is not False:
+                        # タグ文字列を取得（最大4文字）
+                        tag = pg.tag
+
+                        # バッジ画像を取得（Asset から bytes を取得）
+                        badge_bytes = None
+                        try:
+                            if pg.badge:
+                                badge_bytes = await pg.badge.read()
+                        except Exception as e:
+                            print(f"バッジ画像取得エラー: {e}")
+                            badge_bytes = None
+
+                        primary_guild_info = {
+                            'tag': tag,
+                            'badge': badge_bytes,
+                            'identity_enabled': True
+                        }
+                except Exception as e:
+                    print(f"プライマリサーバー情報取得エラー: {e}")
+                    primary_guild_info = None
+
                 message_items.append({
                     'author_name': getattr(msg.author, 'display_name', str(msg.author)),
                     'content': text,
@@ -345,6 +374,7 @@ async def on_message(message):
                     'role_color': role_color_hex,
                     'timestamp': msg.created_at,
                     'emoji_images': emoji_images,
+                    'primary_guild': primary_guild_info,
                 })
 
         try:
