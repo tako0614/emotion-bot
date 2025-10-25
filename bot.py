@@ -9,12 +9,13 @@ import os
 from dotenv import load_dotenv
 from emotion import get_emotion_scores
 from seiteki import classify_sexual_content  # seiteki.pyから関数をインポート
+from discord_renderer import render_discord_like_message, render_messages_stack
+import re
+import aiohttp
 import matplotlib as mpl
 from matplotlib.colors import LinearSegmentedColormap
 import matplotlib.font_manager as fm
-from llm import generate_insult, generate_praise, generate_comfort  # 新しい関数をインポート
 from collections import defaultdict
-import re
 
 # 環境変数から設定を読み込む
 load_dotenv()  # .env ファイルを読み込む
@@ -28,26 +29,31 @@ bot = commands.Bot(command_prefix='!', intents=intents)
 
 # カスタムフォントを登録して使用する関数
 def setup_custom_font():
-    custom_font_path = "./NotoSansCJKjp-Regular.ttf"
-    if os.path.exists(custom_font_path):
-        print(f"カスタムフォントを登録します: {custom_font_path}")
-        try:
-            # フォントを明示的に登録
-            font_prop = fm.FontProperties(fname=custom_font_path)
-            custom_font = fm.FontEntry(
-                fname=custom_font_path,
-                name=font_prop.get_name(),
-                style='normal',
-                variant='normal',
-                weight='normal',
-                stretch='normal',
-                size='medium'
-            )
-            fm.fontManager.ttflist.insert(0, custom_font)
-            print(f"フォント登録成功: {font_prop.get_name()}")
-            return font_prop.get_name()
-        except Exception as e:
-            print(f"カスタムフォントの登録に失敗しました: {e}")
+    # 優先順: ./gg-sans-2/gg sans Regular.ttf -> ./NotoSansCJKjp-Regular.ttf
+    repo_dir = os.path.dirname(__file__)
+    gg_sans_path = os.path.join(repo_dir, 'gg-sans-2', 'gg sans Regular.ttf')
+    noto_path = os.path.join(repo_dir, 'NotoSansCJKjp-Regular.ttf')
+
+    for custom_font_path in (gg_sans_path, noto_path):
+        if os.path.exists(custom_font_path):
+            print(f"カスタムフォントを登録します: {custom_font_path}")
+            try:
+                # フォントを明示的に登録
+                font_prop = fm.FontProperties(fname=custom_font_path)
+                custom_font = fm.FontEntry(
+                    fname=custom_font_path,
+                    name=font_prop.get_name(),
+                    style='normal',
+                    variant='normal',
+                    weight='normal',
+                    stretch='normal',
+                    size='medium'
+                )
+                fm.fontManager.ttflist.insert(0, custom_font)
+                print(f"フォント登録成功: {font_prop.get_name()}")
+                return font_prop.get_name()
+            except Exception as e:
+                print(f"カスタムフォントの登録に失敗しました: {e}")
     return None
 
 # 利用可能な日本語フォントを検出する関数
@@ -156,7 +162,9 @@ async def on_message(message):
             await message.reply(f"感情解析中にキーエラーが発生しました: {ke}")
         except Exception as e:
             print(f"エラーが発生しました: {e}")
-            import traceback
+            # traceback モジュールはファイル先頭でインポート済みのため
+            # ここで再度 import すると関数スコープで名前が束縛されて
+            # 他の except 節で UnboundLocalError が発生するため削除
             traceback.print_exc()  # より詳細なエラー情報を表示
             await message.reply(f"処理中にエラーが発生しました: {e}")
     
@@ -171,81 +179,111 @@ async def on_message(message):
                 await message.reply(f"エロ度: {score}", file=file)
         else:
             await message.reply(f"画像ファイルが見つかりませんでした: {score}.png")
-    
-    # ユーザー指定の悪口生成 - リプライ形式のみ
-    if message.reference and message.content.lower() == "わるぐち":
+
+    # 「ぎょたく」「魚拓」コマンド（参照を起点にN件をまとめる）
+    if message.reference and re.match(r'^(?:ぎょたく|魚拓)', message.content):
+        # コマンド解析: 例 '魚拓', '魚拓3', '魚拓2-4'
+        mcmd = re.match(r'^(?:ぎょたく|魚拓)\s*(\d+)?(?:-(\d+))?$', message.content)
+        if not mcmd:
+            await message.reply("コマンド形式が正しくありません。例: '魚拓', '魚拓3', '魚拓2-5'。")
+            return
+
+        num1 = mcmd.group(1)
+        num2 = mcmd.group(2)
+        if num1 is None:
+            A = 1
+            B = 1
+        else:
+            A = int(num1)
+            if num2 is None:
+                B = A
+            else:
+                B = int(num2)
+
+        # A-B を 1-based index として解釈 (1 が参照メッセージ)
+        if A < 1:
+            A = 1
+        if B < A:
+            B = A
+
         try:
-            # リプライ先のメッセージを取得
             referenced_msg = await message.channel.fetch_message(message.reference.message_id)
-            
-            # メッセージの内容がない場合は処理しない
-            if not referenced_msg.content:
-                await message.reply("テキストメッセージにのみ反応できます。")
-                return
-                
-            await message.channel.send("悪口を生成中...")
-            
-            # 悪口の生成
-            text = referenced_msg.content
-            insult = generate_insult(text)
-            
-            # 結果を送信
-            await message.reply(f"{insult}")
-                
-        except Exception as e:
-            print(f"悪口生成中にエラー: {e}")
-            traceback.print_exc()
-            await message.reply(f"エラーが発生しました: {str(e)}")
-    
-    # 「ほめほめ」コマンドに反応
-    elif message.reference and message.content == "ほめほめ":
+        except Exception:
+            await message.reply("参照メッセージを取得できませんでした。")
+            return
+
+        # 最大取得数は B
+        to_fetch = max(0, B - 1)
         try:
-            # リプライ先のメッセージを取得
-            referenced_msg = await message.channel.fetch_message(message.reference.message_id)
-            
-            # メッセージの内容がない場合は処理しない
-            if not referenced_msg.content:
-                await message.reply("テキストメッセージにのみ反応できます。")
-                return
-                
-            await message.channel.send("誉め言葉を生成中...")
-            
-            # 誉め言葉を生成
-            text = referenced_msg.content
-            praise = generate_praise(text)
-            
-            # 結果を送信
-            await message.reply(f"{praise}")
-                
+            before_msgs = [m async for m in message.channel.history(limit=to_fetch, before=referenced_msg.created_at)]
         except Exception as e:
-            print(f"誉め言葉生成中にエラー: {e}")
-            traceback.print_exc()
-            await message.reply(f"エラーが発生しました: {str(e)}")
-    
-    # 「なぐさめ」コマンドに反応
-    elif message.reference and message.content == "なぐさめ":
+            print(f"メッセージ履歴取得エラー: {e}")
+            await message.reply("メッセージ履歴を取得できませんでした。権限を確認してください。")
+            return
+
+        # list_with_ref: index 0 => referenced_msg, index1 => newest before, etc.
+        list_with_ref = [referenced_msg] + before_msgs
+        # 切り取り（A-B 1-based）
+        slice_items = list_with_ref[A-1:B]
+        # 表示は古い順にしたいので逆順で並べ替え
+        slice_items = list(reversed(slice_items))
+
+        # 取得したメッセージごとに avatar/role/emoji を収集
+        message_items = []
+        emoji_token_re = re.compile(r'(<a?:\w+:(\d+)>)')
+        async with aiohttp.ClientSession() as session:
+            for msg in slice_items:
+                text = msg.content or ''
+                # avatar
+                avatar_bytes = None
+                try:
+                    asset = msg.author.display_avatar
+                    avatar_bytes = await asset.read()
+                except Exception:
+                    avatar_bytes = None
+
+                # role color
+                role_color_hex = None
+                try:
+                    display_color = msg.author.display_color
+                    if getattr(display_color, 'value', 0):
+                        role_color_hex = f"#{display_color.value:06x}"
+                except Exception:
+                    role_color_hex = None
+
+                # collect emoji images for this message
+                emoji_images = {}
+                for m in emoji_token_re.finditer(text):
+                    token = m.group(1)
+                    emoji_id = m.group(2)
+                    animated = token.startswith('<a:')
+                    ext = 'gif' if animated else 'png'
+                    url = f'https://cdn.discordapp.com/emojis/{emoji_id}.{ext}'
+                    try:
+                        async with session.get(url) as resp:
+                            if resp.status == 200:
+                                emoji_images[token] = await resp.read()
+                    except Exception:
+                        pass
+
+                message_items.append({
+                    'author_name': getattr(msg.author, 'display_name', str(msg.author)),
+                    'content': text,
+                    'avatar': avatar_bytes,
+                    'role_color': role_color_hex,
+                    'emoji_images': emoji_images,
+                })
+
         try:
-            # リプライ先のメッセージを取得
-            referenced_msg = await message.channel.fetch_message(message.reference.message_id)
-            
-            # メッセージの内容がない場合は処理しない
-            if not referenced_msg.content:
-                await message.reply("テキストメッセージにのみ反応できます。")
-                return
-                
-            await message.channel.send("慰め言葉を生成中...")
-            
-            # 慰め言葉を生成
-            text = referenced_msg.content
-            comfort = generate_comfort(text)
-            
-            # 結果を送信
-            await message.reply(f"{comfort}")
-                
+            buf = render_messages_stack(message_items, max_width=900)
+            file = discord.File(buf, filename='gyotaku.png')
+            await message.reply(file=file)
         except Exception as e:
-            print(f"慰め言葉生成中にエラー: {e}")
+            print(f"ぎょたく画像生成エラー: {e}")
             traceback.print_exc()
-            await message.reply(f"エラーが発生しました: {str(e)}")
+            await message.reply(f"画像生成中にエラーが発生しました: {e}")
+    
+    # 上記以外のコマンドは本ボットでは処理しない
 
     await bot.process_commands(message)
 
