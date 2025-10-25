@@ -2,6 +2,7 @@ from PIL import Image, ImageDraw, ImageFont, ImageOps
 import io
 import textwrap
 import os
+import re
 
 
 def _load_font(size):
@@ -96,8 +97,20 @@ def render_discord_like_message(author_name, content, avatar=None, role_color=No
     if emoji_images is None:
         emoji_images = {}
 
+    # role_color の正規化: '#rrggbb' 形式に統一する
+    def _sanitize_hex_color(c):
+        if not c:
+            return None
+        # 整形済み '#rrggbb' の場合
+        if isinstance(c, str):
+            m = re.match(r'^#?([0-9a-fA-F]{6})$', c.strip())
+            if m:
+                return f"#{m.group(1).lower()}"
+        return None
+
+    role_color = _sanitize_hex_color(role_color)
+
     # トークン化：カスタム絵文字トークンを分割して扱う
-    import re
     emoji_token_re = re.compile(r'(<a?:\w+:\d+>)')
 
     paragraphs = content.split('\n')
@@ -227,22 +240,12 @@ def render_discord_like_message(author_name, content, avatar=None, role_color=No
     username_fill = username_color
     try:
         if role_color:
-            # role_color は '#rrggbb' 形式の文字列を想定
+            # role_color は '#rrggbb' 形式の文字列に正規化済み
             username_fill = role_color
     except Exception:
         username_fill = username_color
 
     draw.text((name_x, name_y), author_name, font=username_font, fill=username_fill)
-    # ロール色を小さなアクセントとしてユーザー名の左に描画
-    try:
-        if role_color:
-            accent_size = 10
-            accent_x0 = name_x - accent_size - 6
-            accent_y0 = name_y + (username_font.size // 2 if hasattr(username_font, 'size') else 8)
-            # 円形の小アクセント
-            draw.ellipse((accent_x0, name_y + 6, accent_x0 + accent_size, name_y + 6 + accent_size), fill=role_color)
-    except Exception:
-        pass
 
     # メッセージテキスト（トークンごとに描画。絵文字トークンは画像を埋め込む）
     text_x = name_x

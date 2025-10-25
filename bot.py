@@ -234,20 +234,79 @@ async def on_message(message):
         async with aiohttp.ClientSession() as session:
             for msg in slice_items:
                 text = msg.content or ''
-                # avatar
+                # avatar と member の解決
                 avatar_bytes = None
+                member_obj = None
                 try:
-                    asset = msg.author.display_avatar
+                    # 可能なら Guild の Member に解決して roles 等を取得できるようにする
+                    if getattr(msg, 'guild', None) is not None:
+                        try:
+                            member_obj = msg.guild.get_member(msg.author.id)
+                            if member_obj is None:
+                                member_obj = await msg.guild.fetch_member(msg.author.id)
+                        except Exception:
+                            member_obj = None
+
+                    asset = (member_obj.display_avatar if member_obj is not None else msg.author.display_avatar)
                     avatar_bytes = await asset.read()
                 except Exception:
                     avatar_bytes = None
 
-                # role color
+                # role color: member_obj のロール情報を優先して取得し、フォールバックを試す
                 role_color_hex = None
                 try:
-                    display_color = msg.author.display_color
-                    if getattr(display_color, 'value', 0):
-                        role_color_hex = f"#{display_color.value:06x}"
+                    try:
+                        roles = getattr(member_obj, 'roles', None)
+                        if roles:
+                            for role in reversed(roles):
+                                col = getattr(role, 'colour', None) or getattr(role, 'color', None)
+                                if col is not None and getattr(col, 'value', 0):
+                                    role_color_hex = f"#{col.value:06x}"
+                                    break
+                    except Exception:
+                        role_color_hex = None
+
+                    # フォールバック: Member.display_color / msg.author の display_color
+                    if not role_color_hex:
+                        display_color = None
+                        if member_obj is not None:
+                            display_color = getattr(member_obj, 'display_color', None) or getattr(member_obj, 'display_colour', None)
+                        if not display_color:
+                            display_color = getattr(msg.author, 'display_color', None) or getattr(msg.author, 'display_colour', None)
+                        if display_color is not None and getattr(display_color, 'value', 0):
+                            role_color_hex = f"#{display_color.value:06x}"
+
+                    # フォールバック2: top_role
+                    try:
+                        tr = None
+                        if member_obj is not None and hasattr(member_obj, 'top_role'):
+                            tr = getattr(member_obj, 'top_role')
+                        elif hasattr(msg.author, 'top_role'):
+                            tr = getattr(msg.author, 'top_role')
+                        if tr is not None:
+                            col = getattr(tr, 'colour', None) or getattr(tr, 'color', None)
+                            if col is not None and getattr(col, 'value', 0) and not role_color_hex:
+                                role_color_hex = f"#{col.value:06x}"
+                    except Exception:
+                        pass
+
+                    # デバッグログ
+                    try:
+                        author_name_dbg = getattr(member_obj, 'display_name', None) or getattr(msg.author, 'display_name', None) or str(msg.author)
+                        if role_color_hex:
+                            print(f"[DEBUG] {author_name_dbg} role color -> {role_color_hex}")
+                        else:
+                            roles_dbg = []
+                            try:
+                                roles_src = getattr(member_obj, 'roles', None) or getattr(msg.author, 'roles', None) or []
+                                for r in roles_src:
+                                    val = getattr(getattr(r, 'colour', None) or getattr(r, 'color', None), 'value', 0)
+                                    roles_dbg.append(f"{getattr(r, 'name', '')}:{val:06x}")
+                            except Exception:
+                                roles_dbg = ['<roles unavailable>']
+                            print(f"[DEBUG] {author_name_dbg} has no role color, roles: {roles_dbg}")
+                    except Exception:
+                        pass
                 except Exception:
                     role_color_hex = None
 
