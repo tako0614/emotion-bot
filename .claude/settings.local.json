@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python create_character.py:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

@@ -10,6 +10,7 @@ from dotenv import load_dotenv
 from emotion import get_emotion_scores
 from seiteki import classify_sexual_content  # seiteki.pyから関数をインポート
 from discord_renderer import render_discord_like_message, render_messages_stack
+from meme_generator import generate_meme_image
 import re
 import aiohttp
 import matplotlib as mpl
@@ -26,6 +27,120 @@ intents.message_content = True
 intents.messages = True
 
 bot = commands.Bot(command_prefix='!', intents=intents)
+
+# 画像設定を保存する辞書（メッセージIDをキーとする）
+meme_settings = {}
+
+
+# ボタンのViewクラス
+class MemeEditView(discord.ui.View):
+    def __init__(self, settings: dict):
+        super().__init__(timeout=300)  # 5分でタイムアウト
+        self.settings = settings.copy()
+
+    @discord.ui.button(label="🌈 虹色", style=discord.ButtonStyle.primary)
+    async def rainbow_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        # 虹色トグル
+        self.settings['rainbow_text'] = not self.settings['rainbow_text']
+
+        # 画像を再生成
+        img_buf = generate_meme_image(
+            text=self.settings['text'],
+            bg_color=self.settings['bg_color'],
+            rainbow_text=self.settings['rainbow_text'],
+            swap_layout=self.settings['swap_layout'],
+            author_name=self.settings['author_name'],
+            font_name=self.settings['font_name'],
+            avatar_image=self.settings.get('avatar_image')
+        )
+
+        # メッセージを更新
+        file = discord.File(img_buf, filename='meme.png')
+        await interaction.response.edit_message(attachments=[file], view=self)
+
+    @discord.ui.button(label="⚫️ 黒背景", style=discord.ButtonStyle.secondary)
+    async def black_bg_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        # 背景色を黒に
+        self.settings['bg_color'] = 'black'
+
+        # 画像を再生成
+        img_buf = generate_meme_image(
+            text=self.settings['text'],
+            bg_color=self.settings['bg_color'],
+            rainbow_text=self.settings['rainbow_text'],
+            swap_layout=self.settings['swap_layout'],
+            author_name=self.settings['author_name'],
+            font_name=self.settings['font_name'],
+            avatar_image=self.settings.get('avatar_image')
+        )
+
+        # メッセージを更新
+        file = discord.File(img_buf, filename='meme.png')
+        await interaction.response.edit_message(attachments=[file], view=self)
+
+    @discord.ui.button(label="⚪️ 白背景", style=discord.ButtonStyle.secondary)
+    async def white_bg_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        # 背景色を白に
+        self.settings['bg_color'] = 'white'
+
+        # 画像を再生成
+        img_buf = generate_meme_image(
+            text=self.settings['text'],
+            bg_color=self.settings['bg_color'],
+            rainbow_text=self.settings['rainbow_text'],
+            swap_layout=self.settings['swap_layout'],
+            author_name=self.settings['author_name'],
+            font_name=self.settings['font_name'],
+            avatar_image=self.settings.get('avatar_image')
+        )
+
+        # メッセージを更新
+        file = discord.File(img_buf, filename='meme.png')
+        await interaction.response.edit_message(attachments=[file], view=self)
+
+    @discord.ui.button(label="🔄 左右反転", style=discord.ButtonStyle.secondary)
+    async def swap_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        # レイアウトを反転
+        self.settings['swap_layout'] = not self.settings['swap_layout']
+
+        # 画像を再生成
+        img_buf = generate_meme_image(
+            text=self.settings['text'],
+            bg_color=self.settings['bg_color'],
+            rainbow_text=self.settings['rainbow_text'],
+            swap_layout=self.settings['swap_layout'],
+            author_name=self.settings['author_name'],
+            font_name=self.settings['font_name'],
+            avatar_image=self.settings.get('avatar_image')
+        )
+
+        # メッセージを更新
+        file = discord.File(img_buf, filename='meme.png')
+        await interaction.response.edit_message(attachments=[file], view=self)
+
+    @discord.ui.button(label="📝 フォント", style=discord.ButtonStyle.secondary)
+    async def font_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        # フォントを切り替え（default -> noto -> gg-sans -> default）
+        font_cycle = ['default', 'noto', 'gg-sans']
+        current_index = font_cycle.index(self.settings['font_name'])
+        next_index = (current_index + 1) % len(font_cycle)
+        self.settings['font_name'] = font_cycle[next_index]
+
+        # 画像を再生成
+        img_buf = generate_meme_image(
+            text=self.settings['text'],
+            bg_color=self.settings['bg_color'],
+            rainbow_text=self.settings['rainbow_text'],
+            swap_layout=self.settings['swap_layout'],
+            author_name=self.settings['author_name'],
+            font_name=self.settings['font_name'],
+            avatar_image=self.settings.get('avatar_image')
+        )
+
+        # メッセージを更新
+        file = discord.File(img_buf, filename='meme.png')
+        await interaction.response.edit_message(attachments=[file], view=self)
+
 
 # カスタムフォントを登録して使用する関数
 def setup_custom_font():
@@ -386,6 +501,62 @@ async def on_message(message):
             traceback.print_exc()
             await message.reply(f"画像生成中にエラーが発生しました: {e}")
     
+    # 「めいく」コマンド（リプライで画像生成）
+    if message.reference and message.content == "めいく":
+        try:
+            referenced_msg = await message.channel.fetch_message(message.reference.message_id)
+            text = referenced_msg.content
+
+            if not text:
+                await message.reply("テキストメッセージにのみ反応できます。")
+                return
+
+            # ユーザーのアバター画像を取得
+            avatar_bytes = None
+            try:
+                avatar_asset = referenced_msg.author.display_avatar
+                avatar_bytes = await avatar_asset.read()
+            except Exception as e:
+                print(f"アバター画像の取得に失敗: {e}")
+                avatar_bytes = None
+
+            # デフォルト設定で画像生成
+            settings = {
+                'text': text,
+                'bg_color': 'black',
+                'rainbow_text': False,
+                'swap_layout': False,
+                'author_name': referenced_msg.author.display_name,
+                'font_name': 'default',
+                'avatar_image': avatar_bytes
+            }
+
+            # 画像生成
+            img_buf = generate_meme_image(
+                text=settings['text'],
+                bg_color=settings['bg_color'],
+                rainbow_text=settings['rainbow_text'],
+                swap_layout=settings['swap_layout'],
+                author_name=settings['author_name'],
+                font_name=settings['font_name'],
+                avatar_image=settings['avatar_image']
+            )
+
+            # ボタンを作成
+            view = MemeEditView(settings)
+
+            # 画像を送信
+            file = discord.File(img_buf, filename='meme.png')
+            sent_msg = await message.reply(file=file, view=view)
+
+            # 設定を保存（後でボタンから参照）
+            meme_settings[sent_msg.id] = settings
+
+        except Exception as e:
+            print(f"めいく画像生成エラー: {e}")
+            traceback.print_exc()
+            await message.reply(f"画像生成中にエラーが発生しました: {e}")
+
     # 上記以外のコマンドは本ボットでは処理しない
 
     await bot.process_commands(message)
