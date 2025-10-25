@@ -63,7 +63,7 @@ def _load_font(size):
     return ImageFont.load_default()
 
 
-def render_discord_like_message(author_name, content, avatar=None, role_color=None, emoji_images=None, width=1100, max_width=900, min_width=420, timestamp=None):
+def render_discord_like_message(author_name, content, avatar=None, role_color=None, primary_guild=None, emoji_images=None, width=1100, max_width=900, min_width=420, timestamp=None):
     """
     Discord風メッセージを画像化してBytesIOを返す。
 
@@ -162,8 +162,38 @@ def render_discord_like_message(author_name, content, avatar=None, role_color=No
 
     text_pixel_width = max(line_pixel_widths) if line_pixel_widths else 0
 
+    # ユーザー名やサーバータグの横幅も考慮する（サーバータグがある場合は追加幅を確保）
+    try:
+        tmp_for_name = Image.new('RGBA', (10, 10))
+        td_name = ImageDraw.Draw(tmp_for_name)
+        name_bbox = td_name.textbbox((0, 0), author_name, font=username_font)
+        name_w_est = name_bbox[2] - name_bbox[0]
+    except Exception:
+        name_w_est = 0
+
+    tag_extra_width = 0
+    try:
+        # primary_guild は dict-like を想定: {'tag': 'abcd', 'badge': bytes|path|PIL.Image, 'identity_enabled': bool}
+        if primary_guild and primary_guild.get('identity_enabled', True) and primary_guild.get('tag'):
+            tag_font = _load_font(14)
+            td_tmp = Image.new('RGBA', (10, 10))
+            td_draw = ImageDraw.Draw(td_tmp)
+            t_bbox = td_draw.textbbox((0, 0), primary_guild.get('tag'), font=tag_font)
+            t_w = t_bbox[2] - t_bbox[0]
+            # 内側パディングとバッジの余裕を見込む
+            badge_present = bool(primary_guild.get('badge'))
+            badge_pad = 20 if badge_present else 0
+            tag_extra_width = 8 + t_w + 8 + badge_pad
+    except Exception:
+        tag_extra_width = 0
+
     # 必要な総幅を計算（左右パディング + アバター領域 + ギャップ + テキスト幅）
     required_width = padding * 2 + avatar_size + gap + int(text_pixel_width)
+    # ユーザー名行（名前＋サーバータグ）による幅も考慮
+    try:
+        required_width = max(required_width, padding * 2 + avatar_size + gap + int(name_w_est) + 8 + int(tag_extra_width))
+    except Exception:
+        pass
     # 最大・最小幅で制限
     final_width = max(min(required_width, max_width), min_width)
     # 最終的な幅を width 変数として使用
@@ -247,6 +277,80 @@ def render_discord_like_message(author_name, content, avatar=None, role_color=No
 
     draw.text((name_x, name_y), author_name, font=username_font, fill=username_fill)
 
+    # --- サーバータグ描画 (primary_guild) ---
+    tag_drawn = False
+    tag_total_w = 0
+    try:
+        if primary_guild and primary_guild.get('identity_enabled', True) and primary_guild.get('tag'):
+            tag_text = primary_guild.get('tag')
+            tag_font = _load_font(14)
+            tmp_t = Image.new('RGBA', (10, 10))
+            td_t = ImageDraw.Draw(tmp_t)
+            t_bbox = td_t.textbbox((0, 0), tag_text, font=tag_font)
+            t_w = t_bbox[2] - t_bbox[0]
+
+            pad_x = 8
+            pad_y = 4
+            badge_img = primary_guild.get('badge')
+            badge_w = 0
+            badge_h = 0
+            bi = None
+            if badge_img:
+                try:
+                    if isinstance(badge_img, (bytes, bytearray)):
+                        bi = Image.open(io.BytesIO(badge_img)).convert('RGBA')
+                    elif isinstance(badge_img, Image.Image):
+                        bi = badge_img
+                    elif isinstance(badge_img, str) and os.path.exists(badge_img):
+                        bi = Image.open(badge_img).convert('RGBA')
+                    else:
+                        bi = None
+                except Exception:
+                    bi = None
+
+            if bi:
+                badge_h = max(12, name_height - 4)
+                badge_w = int(bi.width * (badge_h / bi.height)) if bi.height else badge_h
+
+            tag_h = name_height
+            tag_total_w = pad_x * 2 + t_w + (badge_w + 4 if badge_w else 0)
+
+            # 名前の右側に描画
+            try:
+                name_bbox_local = tmp_draw.textbbox((0, 0), author_name, font=username_font)
+                name_w_local = name_bbox_local[2] - name_bbox_local[0]
+            except Exception:
+                name_w_local = username_font.size if hasattr(username_font, 'size') else 36
+
+            rect_x0 = name_x + name_w_local + 8
+            rect_y0 = name_y + (name_height - tag_h) // 2
+            rect_x1 = rect_x0 + tag_total_w
+            rect_y1 = rect_y0 + tag_h
+
+            # 角丸矩形（Pillow のバージョンが古い場合は矩形）
+            try:
+                draw.rounded_rectangle((rect_x0, rect_y0, rect_x1, rect_y1), radius=4, fill='#2F3136', outline='#202225')
+            except Exception:
+                draw.rectangle((rect_x0, rect_y0, rect_x1, rect_y1), fill='#2F3136')
+
+            cur_x = rect_x0 + pad_x
+            if bi and badge_w:
+                try:
+                    bi_resized = bi.resize((badge_w, badge_h), Image.LANCZOS)
+                    badge_y = rect_y0 + (tag_h - badge_h) // 2
+                    im.paste(bi_resized, (int(cur_x), int(badge_y)), bi_resized)
+                    cur_x += badge_w + 4
+                except Exception:
+                    pass
+
+            text_y = rect_y0 + (tag_h - (t_bbox[3] - t_bbox[1])) // 2
+            draw.text((cur_x, text_y), tag_text, font=tag_font, fill='#FFFFFF')
+            tag_drawn = True
+    except Exception:
+        # タグ描画に失敗しても無視
+        tag_drawn = False
+        tag_total_w = 0
+
     # タイムスタンプが渡されていればユーザー名の右側に小さめのフォントで描画
     if timestamp:
         try:
@@ -262,7 +366,7 @@ def render_discord_like_message(author_name, content, avatar=None, role_color=No
             else:
                 ts_str = str(timestamp)
 
-            time_font = _load_font(14)
+            time_font = _load_font(16)
             # ユーザー名の幅を測って右側に余白を置いて描画
             try:
                 tmp = Image.new('RGBA', (10, 10))
@@ -272,8 +376,36 @@ def render_discord_like_message(author_name, content, avatar=None, role_color=No
             except Exception:
                 name_w = username_font.size if hasattr(username_font, 'size') else 36
 
+            # サーバータグが描画されていればそれ分だけ右にオフセット
+            # 時刻の X 座標（名前の右側に余白を置く）
             time_x = name_x + name_w + 8
-            time_y = name_y + (username_font.size - 12 if hasattr(username_font, 'size') else 4)
+            try:
+                if tag_drawn and tag_total_w:
+                    time_x += int(tag_total_w) + 8
+            except Exception:
+                pass
+
+            # 時刻は 16px フォントで、20px の領域の中央に置く
+            try:
+                time_box_h = 20
+                tmp_time = Image.new('RGBA', (10, 10))
+                td_time = ImageDraw.Draw(tmp_time)
+                t_bbox = td_time.textbbox((0, 0), ts_str, font=time_font)
+                t_h = t_bbox[3] - t_bbox[1]
+
+                # 名前行の中央 Y を基準に時刻を中央揃えする（より正確な中央寄せ）
+                center_y = name_y + name_height / 2
+                time_y = int(center_y - (t_h / 2))
+                # 安全のため、time_y が name_y を下回ったり name_y+name_height を超えないように制限
+                if time_y < name_y:
+                    time_y = name_y
+                if time_y + t_h > name_y + name_height:
+                    # はみ出す場合は上に寄せる
+                    time_y = int(name_y + name_height - t_h)
+            except Exception:
+                # フォールバック（既存の簡易配置）
+                time_y = name_y + (username_font.size - 12 if hasattr(username_font, 'size') else 4)
+
             # 時刻は灰色で描画
             time_fill = '#99AAB5'
             draw.text((time_x, time_y), ts_str, font=time_font, fill=time_fill)
@@ -343,6 +475,7 @@ def render_messages_stack(message_items, width=None, max_width=900, bg_color='#3
             item.get('content', ''),
             avatar=item.get('avatar'),
             role_color=item.get('role_color'),
+            primary_guild=item.get('primary_guild'),
             emoji_images=item.get('emoji_images', {}),
             timestamp=item.get('timestamp', None),
             width=width or max_width,
