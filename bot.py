@@ -155,7 +155,20 @@ async def on_message(message):
             
             # グラフと元メッセージをリプライ
             file = discord.File(buf, filename='emotions.png')
-            await message.reply(f'メッセージ: "{text}"\n感情分析結果:', file=file)
+            # 参照メッセージの作成時刻をローカル時間で表示
+            try:
+                ts = referenced_msg.created_at
+                try:
+                    ts_local = ts.astimezone()
+                except Exception:
+                    ts_local = ts
+                # 表示は HH:MM の24時間形式
+                timestr = ts_local.strftime('%H:%M')
+            except Exception:
+                timestr = ''
+
+            time_line = f"時間: {timestr}\n" if timestr else ''
+            await message.reply(f'{time_line}メッセージ: "{text}"\n感情分析結果:', file=file)
         except KeyError as ke:
             print(f"キーエラーが発生しました: {ke}")
             traceback.print_exc()
@@ -180,12 +193,12 @@ async def on_message(message):
         else:
             await message.reply(f"画像ファイルが見つかりませんでした: {score}.png")
 
-    # 「ぎょたく」「魚拓」コマンド（参照を起点にN件をまとめる）
-    if message.reference and re.match(r'^(?:ぎょたく|魚拓)', message.content):
+    # 「ぎょたく」「魚拓」「snapshot」コマンド（参照を起点にN件をまとめる）
+    if message.reference and re.match(r'^(?:ぎょたく|魚拓|snapshot|すなっぷ)', message.content):
         # コマンド解析: 例 '魚拓', '魚拓3', '魚拓2-4'
-        mcmd = re.match(r'^(?:ぎょたく|魚拓)\s*(\d+)?(?:-(\d+))?$', message.content)
+        mcmd = re.match(r'^(?:ぎょたく|魚拓|snapshot|すなっぷ)\s*(\d+)?(?:-(\d+))?$', message.content)
         if not mcmd:
-            await message.reply("コマンド形式が正しくありません。例: '魚拓', '魚拓3', '魚拓2-5'。")
+            await message.reply("コマンド形式が正しくありません。例: '魚拓', '魚拓3', '魚拓2-5' または 'snapshot' など。")
             return
 
         num1 = mcmd.group(1)
@@ -330,6 +343,7 @@ async def on_message(message):
                     'content': text,
                     'avatar': avatar_bytes,
                     'role_color': role_color_hex,
+                    'timestamp': msg.created_at,
                     'emoji_images': emoji_images,
                 })
 

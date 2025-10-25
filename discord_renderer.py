@@ -63,7 +63,7 @@ def _load_font(size):
     return ImageFont.load_default()
 
 
-def render_discord_like_message(author_name, content, avatar=None, role_color=None, emoji_images=None, width=1100, max_width=900, min_width=420):
+def render_discord_like_message(author_name, content, avatar=None, role_color=None, emoji_images=None, width=1100, max_width=900, min_width=420, timestamp=None):
     """
     Discord風メッセージを画像化してBytesIOを返す。
 
@@ -247,6 +247,40 @@ def render_discord_like_message(author_name, content, avatar=None, role_color=No
 
     draw.text((name_x, name_y), author_name, font=username_font, fill=username_fill)
 
+    # タイムスタンプが渡されていればユーザー名の右側に小さめのフォントで描画
+    if timestamp:
+        try:
+            # timestamp が datetime オブジェクトの場合は文字列化
+            import datetime as _dt
+            if isinstance(timestamp, _dt.datetime):
+                # ローカルタイムに変換して表示（HH:MM の24時間形式）
+                try:
+                    ts_local = timestamp.astimezone()
+                except Exception:
+                    ts_local = timestamp
+                ts_str = ts_local.strftime('%H:%M')
+            else:
+                ts_str = str(timestamp)
+
+            time_font = _load_font(14)
+            # ユーザー名の幅を測って右側に余白を置いて描画
+            try:
+                tmp = Image.new('RGBA', (10, 10))
+                td = ImageDraw.Draw(tmp)
+                name_bbox = td.textbbox((0, 0), author_name, font=username_font)
+                name_w = name_bbox[2] - name_bbox[0]
+            except Exception:
+                name_w = username_font.size if hasattr(username_font, 'size') else 36
+
+            time_x = name_x + name_w + 8
+            time_y = name_y + (username_font.size - 12 if hasattr(username_font, 'size') else 4)
+            # 時刻は灰色で描画
+            time_fill = '#99AAB5'
+            draw.text((time_x, time_y), ts_str, font=time_font, fill=time_fill)
+        except Exception:
+            # タイムスタンプ描画は失敗しても無視
+            pass
+
     # メッセージテキスト（トークンごとに描画。絵文字トークンは画像を埋め込む）
     text_x = name_x
     text_y = name_y + name_height + 8
@@ -310,6 +344,7 @@ def render_messages_stack(message_items, width=None, max_width=900, bg_color='#3
             avatar=item.get('avatar'),
             role_color=item.get('role_color'),
             emoji_images=item.get('emoji_images', {}),
+            timestamp=item.get('timestamp', None),
             width=width or max_width,
             max_width=max_width
         )
