@@ -5,10 +5,12 @@ import os
 import re
 
 
-def _load_font(size):
-    # 優先してリポジトリ内のフォントを使用（gg-sans-2 の Regular を優先）
+def _load_font(size, weight='Regular'):
+    # 優先してリポジトリ内のフォントを使用（gg-sans-2 の指定ウェイトを優先）
+    # weight: 'Regular', 'Medium', 'Semibold', 'Bold'
     repo_dir = os.path.dirname(__file__)
-    gg_sans_path = os.path.join(repo_dir, 'gg-sans-2', 'gg sans Regular.ttf')
+    gg_sans_path = os.path.join(repo_dir, 'gg-sans-2', f'gg sans {weight}.ttf')
+    gg_sans_regular_path = os.path.join(repo_dir, 'gg-sans-2', 'gg sans Regular.ttf')
     noto_path = os.path.join(repo_dir, 'NotoSansCJKjp-Regular.ttf')
 
     def _test_font(fp):
@@ -36,11 +38,18 @@ def _load_font(size):
                 pass
             return None
 
-    # まず gg-sans を試す
+    # まず指定ウェイトの gg-sans を試す
     if os.path.exists(gg_sans_path):
         f = _test_font(gg_sans_path)
         if f:
             print(f"使用フォント: {gg_sans_path}")
+            return f
+
+    # 指定ウェイトが見つからない場合は Regular を試す
+    if weight != 'Regular' and os.path.exists(gg_sans_regular_path):
+        f = _test_font(gg_sans_regular_path)
+        if f:
+            print(f"使用フォント（フォールバック）: {gg_sans_regular_path}")
             return f
 
     # 次に Noto（日本語対応）を試す
@@ -175,7 +184,7 @@ def render_discord_like_message(author_name, content, avatar=None, role_color=No
     try:
         # primary_guild は dict-like を想定: {'tag': 'abcd', 'badge': bytes|path|PIL.Image, 'identity_enabled': bool}
         if primary_guild and primary_guild.get('identity_enabled', True) and primary_guild.get('tag'):
-            tag_font = _load_font(14)
+            tag_font = _load_font(15, weight='Semibold')
             td_tmp = Image.new('RGBA', (10, 10))
             td_draw = ImageDraw.Draw(td_tmp)
             t_bbox = td_draw.textbbox((0, 0), primary_guild.get('tag'), font=tag_font)
@@ -283,7 +292,7 @@ def render_discord_like_message(author_name, content, avatar=None, role_color=No
     try:
         if primary_guild and primary_guild.get('identity_enabled', True) and primary_guild.get('tag'):
             tag_text = primary_guild.get('tag')
-            tag_font = _load_font(14)
+            tag_font = _load_font(15, weight='Semibold')
             tmp_t = Image.new('RGBA', (10, 10))
             td_t = ImageDraw.Draw(tmp_t)
             t_bbox = td_t.textbbox((0, 0), tag_text, font=tag_font)
