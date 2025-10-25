@@ -194,9 +194,9 @@ async def on_message(message):
             await message.reply(f"画像ファイルが見つかりませんでした: {score}.png")
 
     # 「ぎょたく」「魚拓」「snapshot」コマンド（参照を起点にN件をまとめる）
-    if message.reference and re.match(r'^(?:ぎょたく|魚拓|snapshot|すなっぷ)', message.content):
+    if message.reference and re.match(r'^(?:ぎょたく|魚拓)', message.content):
         # コマンド解析: 例 '魚拓', '魚拓3', '魚拓2-4'
-        mcmd = re.match(r'^(?:ぎょたく|魚拓|snapshot|すなっぷ)\s*(\d+)?(?:-(\d+))?$', message.content)
+        mcmd = re.match(r'^(?:ぎょたく|魚拓)\s*(\d+)?(?:-(\d+))?$', message.content)
         if not mcmd:
             await message.reply("コマンド形式が正しくありません。例: '魚拓', '魚拓3', '魚拓2-5' または 'snapshot' など。")
             return

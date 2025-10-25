@@ -3,6 +3,7 @@ import io
 import textwrap
 import os
 import re
+from typing import List, Tuple, Optional
 
 
 def _load_font(size, weight='Regular'):
@@ -72,6 +73,230 @@ def _load_font(size, weight='Regular'):
     return ImageFont.load_default()
 
 
+def _get_fallback_fonts(size, weight='Regular'):
+    """
+    フォールバックフォントのリストを返す（優先順位順）
+    各フォントには識別用のメタデータ（パス）を保持
+    """
+    fonts = []
+    repo_dir = os.path.dirname(__file__)
+
+    # 1. gg-sans (指定ウェイト)
+    gg_sans_path = os.path.join(repo_dir, 'gg-sans-2', f'gg sans {weight}.ttf')
+    if os.path.exists(gg_sans_path):
+        try:
+            font = ImageFont.truetype(gg_sans_path, size)
+            # パス情報を保持（フォールバック判定用）
+            font._font_path = gg_sans_path
+            fonts.append(font)
+            print(f"[フォント読込] gg-sans {weight}: {gg_sans_path}")
+        except Exception as e:
+            print(f"[フォント読込失敗] gg-sans {weight}: {e}")
+
+    # 2. gg-sans (Regular)
+    if weight != 'Regular':
+        gg_sans_regular = os.path.join(repo_dir, 'gg-sans-2', 'gg sans Regular.ttf')
+        if os.path.exists(gg_sans_regular):
+            try:
+                font = ImageFont.truetype(gg_sans_regular, size)
+                font._font_path = gg_sans_regular
+                fonts.append(font)
+                print(f"[フォント読込] gg-sans Regular: {gg_sans_regular}")
+            except Exception as e:
+                print(f"[フォント読込失敗] gg-sans Regular: {e}")
+
+    # 3. Noto Sans CJK (日本語対応) - 最優先にする
+    noto_path = os.path.join(repo_dir, 'NotoSansCJKjp-Regular.ttf')
+    print(f"[Notoフォント] パス: {noto_path}, 存在: {os.path.exists(noto_path)}")
+    if os.path.exists(noto_path):
+        try:
+            font = ImageFont.truetype(noto_path, size)
+            font._font_path = noto_path
+            font._is_cjk = True  # CJK対応フラグ
+            fonts.append(font)
+            print(f"[フォント読込] Noto Sans CJK: {noto_path}")
+        except Exception as e:
+            print(f"[フォント読込失敗] Noto Sans CJK: {e}")
+    else:
+        print(f"[警告] Notoフォントが見つかりません: {noto_path}")
+
+    # 4. システムフォント
+    for sys_fp in ('arial.ttf', 'DejaVuSans.ttf', '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf'):
+        try:
+            font = ImageFont.truetype(sys_fp, size)
+            font._font_path = sys_fp
+            fonts.append(font)
+            print(f"[フォント読込] システムフォント: {sys_fp}")
+        except Exception:
+            continue
+
+    # 5. デフォルトフォント
+    if not fonts:
+        font = ImageFont.load_default()
+        font._font_path = 'default'
+        fonts.append(font)
+        print(f"[フォント読込] デフォルトフォント")
+
+    print(f"[フォント読込完了] 合計 {len(fonts)} 個のフォントを読み込みました")
+    return fonts
+
+
+def _has_cjk_character(text):
+    """
+    テキストに日本語・中国語・韓国語の文字が含まれているかチェック
+    """
+    for char in text:
+        code = ord(char)
+        # CJK統合漢字、ひらがな、カタカナ、ハングルなど
+        if (0x4E00 <= code <= 0x9FFF or  # CJK統合漢字
+            0x3040 <= code <= 0x309F or  # ひらがな
+            0x30A0 <= code <= 0x30FF or  # カタカナ
+            0xAC00 <= code <= 0xD7AF or  # ハングル
+            0x3400 <= code <= 0x4DBF or  # CJK拡張A
+            0x20000 <= code <= 0x2A6DF): # CJK拡張B
+            return True
+    return False
+
+
+def _draw_text_with_fallback(draw, pos, text, fonts, fill):
+    """
+    複数のフォントを使って文字列を描画する
+    CJK文字が含まれている場合は自動的にNotoフォントを優先
+    """
+    if not text:
+        return pos[0]
+
+    x, y = pos
+
+    # CJK文字が含まれている場合は、CJK対応フォントを最優先
+    has_cjk = _has_cjk_character(text)
+
+    if has_cjk:
+        print(f"[CJK検出] テキスト: {text[:20]}... (has_cjk={has_cjk})")
+        # fontsリストを並び替えて、CJK対応フォントを最初に
+        reordered_fonts = []
+        other_fonts = []
+        for font in fonts:
+            try:
+                # _is_cjk フラグをチェック
+                is_cjk_font = getattr(font, '_is_cjk', False)
+                font_path = getattr(font, '_font_path', '').lower()
+
+                if is_cjk_font or 'noto' in font_path or 'cjk' in font_path:
+                    reordered_fonts.append(font)
+                    print(f"  [CJK優先] {font_path}")
+                else:
+                    other_fonts.append(font)
+            except Exception:
+                other_fonts.append(font)
+        fonts = reordered_fonts + other_fonts
+        print(f"  [フォント順序] CJK: {len(reordered_fonts)}, その他: {len(other_fonts)}")
+
+    # フォントを順番に試行
+    for i, font in enumerate(fonts):
+        try:
+            font_path = getattr(font, '_font_path', 'unknown')
+            # テキスト全体を一度に描画
+            draw.text((x, y), text, font=font, fill=fill)
+            # 幅を計算
+            bbox = draw.textbbox((0, 0), text, font=font)
+            width = bbox[2] - bbox[0]
+            x += width
+            if has_cjk:
+                print(f"  [描画成功] フォント: {font_path}, 幅: {width}")
+            return x
+        except Exception as e:
+            # デバッグ用: どのフォントで失敗したか記録
+            if has_cjk or i == 0:  # CJKまたは最初のフォントのエラーのみ表示
+                print(f"  [描画失敗] フォント {getattr(font, '_font_path', 'unknown')}: {e}")
+            continue
+
+    # すべて失敗した場合はデフォルトフォントで描画
+    print(f"[警告] すべてのフォントで描画失敗: {text[:20]}...")
+    try:
+        fallback = fonts[0] if fonts else ImageFont.load_default()
+        draw.text((x, y), text, font=fallback, fill=fill)
+        bbox = draw.textbbox((0, 0), text, font=fallback)
+        x += bbox[2] - bbox[0]
+    except Exception as e:
+        print(f"[エラー] フォールバック描画も失敗: {e}")
+
+    return x
+
+
+def _parse_markdown(text):
+    """
+    Markdown構文をパースしてトークンのリストを返す
+    各トークンは (text, style) のタプル
+    style: {'bold': bool, 'italic': bool, 'code': bool, 'strikethrough': bool}
+    """
+    tokens = []
+
+    # カスタム絵文字は保護する
+    emoji_pattern = r'(<a?:\w+:\d+>)'
+
+    # Markdown構文のパターン（優先順位順）
+    # *** 太字斜体 ***, **太字**, *斜体*, `コード`, ~~取り消し線~~
+    patterns = [
+        (r'\*\*\*(.+?)\*\*\*', {'bold': True, 'italic': True}),  # ***太字斜体***
+        (r'___(.+?)___', {'bold': True, 'italic': True}),  # ___太字斜体___
+        (r'\*\*(.+?)\*\*', {'bold': True}),  # **太字**
+        (r'__(.+?)__', {'bold': True}),  # __太字__
+        (r'\*(.+?)\*', {'italic': True}),  # *斜体*
+        (r'_(.+?)_', {'italic': True}),  # _斜体_
+        (r'`([^`]+)`', {'code': True}),  # `コード`
+        (r'~~(.+?)~~', {'strikethrough': True}),  # ~~取り消し線~~
+    ]
+
+    def parse_segment(segment):
+        """再帰的にMarkdownをパースする"""
+        # カスタム絵文字をチェック
+        if re.match(emoji_pattern, segment):
+            return [(segment, {})]
+
+        result = []
+        remaining = segment
+
+        while remaining:
+            # 最も早く出現するパターンを見つける
+            earliest_match = None
+            earliest_pos = len(remaining)
+            matched_style = {}
+
+            for pattern, style in patterns:
+                match = re.search(pattern, remaining)
+                if match and match.start() < earliest_pos:
+                    earliest_match = match
+                    earliest_pos = match.start()
+                    matched_style = style
+
+            if earliest_match:
+                # マッチ前のテキストを追加
+                if earliest_pos > 0:
+                    result.append((remaining[:earliest_pos], {}))
+
+                # マッチしたテキストを追加（スタイル付き）
+                result.append((earliest_match.group(1), matched_style))
+
+                # 残りのテキストを処理
+                remaining = remaining[earliest_match.end():]
+            else:
+                # パターンが見つからない場合は残りをそのまま追加
+                if remaining:
+                    result.append((remaining, {}))
+                break
+
+        return result
+
+    # 絵文字とテキストを分離
+    parts = re.split(emoji_pattern, text)
+    for part in parts:
+        if part:
+            tokens.extend(parse_segment(part))
+
+    return tokens
+
+
 def render_discord_like_message(author_name, content, avatar=None, role_color=None, primary_guild=None, emoji_images=None, width=1100, max_width=900, min_width=420, timestamp=None):
     """
     Discord風メッセージを画像化してBytesIOを返す。
@@ -119,54 +344,83 @@ def render_discord_like_message(author_name, content, avatar=None, role_color=No
 
     role_color = _sanitize_hex_color(role_color)
 
-    # トークン化：カスタム絵文字トークンを分割して扱う
-    emoji_token_re = re.compile(r'(<a?:\w+:\d+>)')
+    # フォールバックフォントを準備
+    fallback_fonts = _get_fallback_fonts(21, 'Regular')
+    fallback_fonts_bold = _get_fallback_fonts(21, 'Bold')
 
-    paragraphs = content.split('\n')
-    lines = []  # 各行は文字列またはトークンのリストにする
     # 一時描画オブジェクト
     tmp_img = Image.new('RGBA', (10, 10))
     tmp_draw = ImageDraw.Draw(tmp_img)
 
-    def measure_token(tok):
-        # 絵文字トークンの場合は画像の幅、そうでなければテキスト幅
-        if tok.startswith('<') and tok.endswith('>') and tok in emoji_images:
+    # Markdownをパースしてトークンに分割
+    paragraphs = content.split('\n')
+    lines = []  # 各行は [(text, style, is_emoji)] のリスト
+
+    def measure_token(text, style, is_emoji=False):
+        # 絵文字トークンの場合は画像の幅
+        if is_emoji and text in emoji_images:
             try:
-                with Image.open(io.BytesIO(emoji_images[tok])) as im_e:
-                    w = im_e.width
+                with Image.open(io.BytesIO(emoji_images[text])) as im_e:
+                    return im_e.width
             except Exception:
-                w = username_font.size
-            return w
+                return 24
+
+        # コードや太字の場合は適切なフォントを使う
+        if style.get('bold'):
+            font = fallback_fonts_bold[0] if fallback_fonts_bold else text_font
         else:
-            bbox = tmp_draw.textbbox((0, 0), tok, font=text_font)
-            return bbox[2] - bbox[0]
+            font = text_font
+
+        bbox = tmp_draw.textbbox((0, 0), text, font=font)
+        width = bbox[2] - bbox[0]
+
+        # コードブロックの場合は背景のパディングを追加
+        if style.get('code'):
+            width += 8  # 左右のパディング
+
+        return width
+
+    emoji_token_re = re.compile(r'(<a?:\w+:\d+>)')
 
     for paragraph in paragraphs:
-        # 分割してトークン配列を作る
-        parts = [p for p in emoji_token_re.split(paragraph) if p != '']
-        # 行組み立て
+        # まずMarkdownをパース
+        md_tokens = _parse_markdown(paragraph)
+
+        # トークンをさらに絵文字で分割
+        expanded_tokens = []
+        for text, style in md_tokens:
+            # 絵文字トークンで分割
+            parts = emoji_token_re.split(text)
+            for part in parts:
+                if part:
+                    is_emoji = part.startswith('<') and part.endswith('>')
+                    expanded_tokens.append((part, style, is_emoji))
+
+        # 行組み立て（折り返し処理）
         cur_line = []
         cur_width = 0
-        for part in parts:
-            w = measure_token(part)
-            # 単語内分割は考慮せず、パート単位で折り返す
+        for token in expanded_tokens:
+            text, style, is_emoji = token
+            w = measure_token(text, style, is_emoji)
+
             if cur_width + w > max_text_width and cur_line:
                 lines.append(cur_line)
-                cur_line = [part]
+                cur_line = [token]
                 cur_width = w
             else:
-                cur_line.append(part)
+                cur_line.append(token)
                 cur_width += w
+
         # 末尾の行を追加
         if cur_line:
             lines.append(cur_line)
 
     # 各行の実際のピクセル幅を計測して必要なテキスト幅を算出
     line_pixel_widths = []
-    for parts in lines:
+    for line_tokens in lines:
         wsum = 0
-        for part in parts:
-            wsum += measure_token(part)
+        for text, style, is_emoji in line_tokens:
+            wsum += measure_token(text, style, is_emoji)
         line_pixel_widths.append(wsum)
 
     text_pixel_width = max(line_pixel_widths) if line_pixel_widths else 0
@@ -284,7 +538,9 @@ def render_discord_like_message(author_name, content, avatar=None, role_color=No
     except Exception:
         username_fill = username_color
 
-    draw.text((name_x, name_y), author_name, font=username_font, fill=username_fill)
+    # ユーザー名をフォールバック対応で描画
+    username_fallback_fonts = _get_fallback_fonts(21, 'Regular')
+    _draw_text_with_fallback(draw, (name_x, name_y), author_name, username_fallback_fonts, username_fill)
 
     # --- サーバータグ描画 (primary_guild) ---
     tag_drawn = False
@@ -353,7 +609,9 @@ def render_discord_like_message(author_name, content, avatar=None, role_color=No
                     pass
 
             text_y = rect_y0 + (tag_h - (t_bbox[3] - t_bbox[1])) // 2
-            draw.text((cur_x, text_y), tag_text, font=tag_font, fill='#FFFFFF')
+            # タグテキストをフォールバック対応で描画
+            tag_fallback_fonts = _get_fallback_fonts(15, 'Semibold')
+            _draw_text_with_fallback(draw, (cur_x, text_y), tag_text, tag_fallback_fonts, '#FFFFFF')
             tag_drawn = True
     except Exception:
         # タグ描画に失敗しても無視
@@ -422,32 +680,65 @@ def render_discord_like_message(author_name, content, avatar=None, role_color=No
             # タイムスタンプ描画は失敗しても無視
             pass
 
-    # メッセージテキスト（トークンごとに描画。絵文字トークンは画像を埋め込む）
+    # メッセージテキスト（トークンごとに描画、Markdown対応）
     text_x = name_x
     text_y = name_y + name_height + 8
-    for i, line_parts in enumerate(lines):
+    for i, line_tokens in enumerate(lines):
         x = text_x
         y = text_y + i * line_height
-        for part in line_parts:
-            if part.startswith('<') and part.endswith('>') and part in emoji_images:
-                # 絵文字画像を描画（フォントサイズに合わせて高さを調整）
+
+        for text, style, is_emoji in line_tokens:
+            if is_emoji and text in emoji_images:
+                # 絵文字画像を描画
                 try:
-                    em_img = Image.open(io.BytesIO(emoji_images[part])).convert('RGBA')
-                    # 高さを line_height に合わせる
+                    em_img = Image.open(io.BytesIO(emoji_images[text])).convert('RGBA')
                     em_h = line_height - 4
                     em_w = int(em_img.width * (em_h / em_img.height)) if em_img.height else em_h
                     em_img = em_img.resize((em_w, em_h), Image.LANCZOS)
                     im.paste(em_img, (int(x), int(y)), em_img)
                     x += em_w + 2
                 except Exception:
-                    # フォールバックで名前を描画
-                    draw.text((x, y), part, font=text_font, fill=text_color)
-                    w = tmp_draw.textbbox((0, 0), part, font=text_font)[2]
-                    x += w
+                    # フォールバックでテキスト描画
+                    x = _draw_text_with_fallback(draw, (x, y), text, fallback_fonts, text_color)
             else:
-                draw.text((x, y), part, font=text_font, fill=text_color)
-                w = tmp_draw.textbbox((0, 0), part, font=text_font)[2]
-                x += w
+                # スタイルに応じてテキストを描画
+                # フォント選択
+                if style.get('bold'):
+                    fonts = fallback_fonts_bold
+                else:
+                    fonts = fallback_fonts
+
+                # 色選択
+                if style.get('code'):
+                    fill_color = '#FFFFFF'  # コードは白
+                else:
+                    fill_color = text_color
+
+                # コードの背景を描画
+                if style.get('code'):
+                    # 背景の矩形を描画
+                    bbox = tmp_draw.textbbox((0, 0), text, font=fonts[0])
+                    text_w = bbox[2] - bbox[0]
+                    text_h = bbox[3] - bbox[1]
+                    bg_x0 = x - 2
+                    bg_y0 = y - 2
+                    bg_x1 = x + text_w + 2
+                    bg_y1 = y + text_h + 2
+                    try:
+                        draw.rounded_rectangle((bg_x0, bg_y0, bg_x1, bg_y1), radius=3, fill='#202225')
+                    except Exception:
+                        draw.rectangle((bg_x0, bg_y0, bg_x1, bg_y1), fill='#202225')
+
+                # テキスト描画（フォールバック対応）
+                start_x = x
+                x = _draw_text_with_fallback(draw, (x, y), text, fonts, fill_color)
+
+                # 取り消し線を描画
+                if style.get('strikethrough'):
+                    bbox = tmp_draw.textbbox((0, 0), text, font=fonts[0])
+                    text_h = bbox[3] - bbox[1]
+                    strike_y = y + text_h // 2
+                    draw.line((start_x, strike_y, x, strike_y), fill=fill_color, width=2)
 
     # 余白を持たせた保存
     # 最終的に透明部分が残らないよう、背景色で合成して RGB にする
